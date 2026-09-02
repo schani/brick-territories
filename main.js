@@ -392,6 +392,7 @@ const history = new AreaHistory(world);
 const fluidRenderer = new FluidRenderer(fluidCanvas, COLORS);
 let paused = false;
 let elapsedSeconds = 0;
+let visualSeconds = 0;
 let previousTime = performance.now();
 let nextSample = 0.25;
 let observedWidth = 0;
@@ -419,6 +420,8 @@ function setPaused(next) {
 function reset() {
   hideCellTooltip();
   world.reset();
+  fluidRenderer.reset(world);
+  visualSeconds = 0;
   renderWorld();
   observedWidth = world.width;
   elapsedSeconds = 0;
@@ -428,7 +431,7 @@ function reset() {
   setPaused(false);
 }
 
-function renderWorld() {
+function renderWorld(time = visualSeconds) {
   canvas.hidden = superSpeed;
   fluidCanvas.hidden = !superSpeed;
   if (!superSpeed) {
@@ -436,7 +439,7 @@ function renderWorld() {
     return;
   }
   const hoveredOwner = world.hoveredCell < 0 ? -1 : world.cells[world.hoveredCell];
-  fluidRenderer.render(world, hoveredOwner);
+  fluidRenderer.render(world, hoveredOwner, time);
 }
 
 function hideCellTooltip() {
@@ -475,8 +478,10 @@ function tick(now) {
   const delta = (now - previousTime) / 1000;
   previousTime = now;
   if (!paused) {
-    const simulationDelta = Math.min(delta, 0.05) * (superSpeed ? 12 : 1);
+    const frameDelta = Math.min(delta, 0.05);
+    const simulationDelta = frameDelta * (superSpeed ? 12 : 1);
     elapsedSeconds += simulationDelta;
+    visualSeconds += frameDelta;
     world.update(simulationDelta);
     renderWorld();
     updateCellTooltip();
@@ -516,6 +521,7 @@ controls.addEventListener("submit", (event) => {
 $("#pause").addEventListener("click", () => setPaused(!paused));
 $("#super-speed").addEventListener("change", (event) => {
   superSpeed = event.target.checked;
+  if (superSpeed) fluidRenderer.reset(world);
   setPaused(paused);
   renderWorld();
 });

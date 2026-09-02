@@ -12,7 +12,7 @@ const FRAGMENT_SHADER = `#version 300 es
 precision highp float;
 precision highp usampler2D;
 
-uniform usampler2D uOwners;
+uniform usampler2D uState;
 uniform ivec2 uGridSize;
 uniform vec3 uPalette[24];
 uniform int uHoveredOwner;
@@ -31,12 +31,26 @@ float cubicWeight(float distance) {
   return 0.0;
 }
 
+float transitionProgress(float progress) {
+  if (progress < 0.65) {
+    float phase = smoothstep(0.0, 1.0, progress / 0.65);
+    return phase * 0.78;
+  }
+  if (progress < 0.82) {
+    float phase = smoothstep(0.0, 1.0, (progress - 0.65) / 0.17);
+    return mix(0.78, 0.68, phase);
+  }
+  float phase = smoothstep(0.0, 1.0, (progress - 0.82) / 0.18);
+  return mix(0.68, 1.0, phase);
+}
+
 void main() {
   vec2 sourceUv = vec2(vUv.x, 1.0 - vUv.y);
   vec2 gridPosition = sourceUv * vec2(uGridSize) - 0.5;
 
   float influence[24];
   for (int owner = 0; owner < 24; owner++) influence[owner] = 0.0;
+  float activity = 0.0;
 
   ivec2 origin = ivec2(floor(gridPosition));
   for (int y = -1; y <= 2; y++) {
@@ -45,8 +59,14 @@ void main() {
       ivec2 cell = clamp(samplePosition, ivec2(0), uGridSize - 1);
       vec2 offset = vec2(samplePosition) - gridPosition;
       float weight = cubicWeight(offset.x) * cubicWeight(offset.y);
-      int owner = int(texelFetch(uOwners, cell, 0).r);
-      influence[owner] += weight;
+      uvec4 state = texelFetch(uState, cell, 0);
+      int previousOwner = int(state.r);
+      int currentOwner = int(state.g);
+      float progress = float(state.b) / 255.0;
+      float eased = transitionProgress(progress);
+      influence[previousOwner] += weight * (1.0 - eased);
+      influence[currentOwner] += weight * eased;
+      activity += weight * float(state.a) / 255.0;
     }
   }
 
@@ -68,15 +88,18 @@ void main() {
   }
 
   float margin = strongest - runnerUp;
-  float antialiasWidth = max(fwidth(margin) * 1.45, 0.002);
-  float boundary = 1.0 - smoothstep(0.0, antialiasWidth, margin);
-  vec3 color = mix(uPalette[strongestOwner], uPalette[runnerUpOwner], boundary * 0.46);
-  color = mix(color, vec3(0.09), boundary * 0.07);
+  float blendWidth = max(fwidth(margin) * 2.5, 0.003);
+  float boundaryBlend = 1.0 - smoothstep(0.0, blendWidth, margin);
+  vec3 primary = uPalette[strongestOwner];
+  vec3 secondary = uPalette[runnerUpOwner];
+  vec3 blended = mix(primary, secondary, 0.5);
+  vec3 color = mix(primary, blended, boundaryBlend);
 
   if (uHoveredOwner >= 0) {
     color *= strongestOwner == uHoveredOwner ? 1.06 : 0.92;
   }
 
+  color = mix(color, vec3(1.0), min(activity * 0.055, 0.055));
   color += (grain(gl_FragCoord.xy) - 0.5) * 0.018;
   outColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }`;
@@ -119,6 +142,7 @@ export class FluidRenderer {
     this.available = false;
     this.textureWidth = 0;
     this.textureHeight = 0;
+    this.transitionDuration = 0.42;
 
     try {
       const gl = canvas.getContext("webgl2", { alpha: false, antialias: false });
@@ -128,14 +152,14 @@ export class FluidRenderer {
       this.texture = gl.createTexture();
       this.vertexArray = gl.createVertexArray();
       this.locations = {
-        owners: gl.getUniformLocation(this.program, "uOwners"),
+        state: gl.getUniformLocation(this.program, "uState"),
         gridSize: gl.getUniformLocation(this.program, "uGridSize"),
         palette: gl.getUniformLocation(this.program, "uPalette[0]"),
         hoveredOwner: gl.getUniformLocation(this.program, "uHoveredOwner")
       };
 
       gl.useProgram(this.program);
-      gl.uniform1i(this.locations.owners, 0);
+      gl.uniform1i(this.locations.state, 0);
       gl.uniform3fv(this.locations.palette, paletteData(colors));
       gl.bindTexture(gl.TEXTURE_2D, this.texture);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -149,9 +173,42 @@ export class FluidRenderer {
     }
   }
 
-  render(world, hoveredOwner) {
+  reset(world) {
+    const length = world.cells.length;
+    this.previousOwners = Uint8Array.from(world.cells);
+    this.currentOwners = Uint8Array.from(world.cells);
+    this.transitionStarts = new Float64Array(length);
+    this.transitionStarts.fill(-Infinity);
+    this.state = new Uint8Array(length * 4);
+    this.textureWidth = 0;
+    this.textureHeight = 0;
+  }
+
+  updateState(world, now) {
+    if (!this.state || this.currentOwners.length !== world.cells.length) this.reset(world);
+    for (let index = 0; index < world.cells.length; index += 1) {
+      const nextOwner = world.cells[index];
+      if (nextOwner !== this.currentOwners[index]) {
+        const priorProgress = (now - this.transitionStarts[index]) / this.transitionDuration;
+        if (priorProgress >= 0.5) this.previousOwners[index] = this.currentOwners[index];
+        this.currentOwners[index] = nextOwner;
+        this.transitionStarts[index] = now;
+      }
+
+      const progress = Math.min(1, (now - this.transitionStarts[index]) / this.transitionDuration);
+      const offset = index * 4;
+      if (progress >= 1) this.previousOwners[index] = this.currentOwners[index];
+      this.state[offset] = this.previousOwners[index];
+      this.state[offset + 1] = this.currentOwners[index];
+      this.state[offset + 2] = Math.round(Math.max(0, progress) * 255);
+      this.state[offset + 3] = progress >= 1 ? 0 : Math.round(Math.sin(Math.max(0, progress) * Math.PI) * 255);
+    }
+  }
+
+  render(world, hoveredOwner, now) {
     if (!this.available) return;
     const gl = this.gl;
+    this.updateState(world, now);
     const dpr = Math.min(devicePixelRatio || 1, 2);
     const width = Math.floor(world.width * dpr);
     const height = Math.floor(world.height * dpr);
@@ -169,9 +226,9 @@ export class FluidRenderer {
     if (this.textureWidth !== world.cols || this.textureHeight !== world.rows) {
       this.textureWidth = world.cols;
       this.textureHeight = world.rows;
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.R8UI, world.cols, world.rows, 0, gl.RED_INTEGER, gl.UNSIGNED_BYTE, world.cells);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA8UI, world.cols, world.rows, 0, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, this.state);
     } else {
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, world.cols, world.rows, gl.RED_INTEGER, gl.UNSIGNED_BYTE, world.cells);
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, world.cols, world.rows, gl.RGBA_INTEGER, gl.UNSIGNED_BYTE, this.state);
     }
 
     gl.uniform2i(this.locations.gridSize, world.cols, world.rows);
