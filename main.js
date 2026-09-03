@@ -552,10 +552,10 @@ $("#webgl").addEventListener("change", (event) => {
 });
 const grainSourceControl = $(".grain-source-control");
 const grainPresets = {
-  piano: "/audio/piano.mp3",
-  drums: "/audio/drums.mp3",
-  rain: "/audio/rain.mp3",
-  song: "/audio/full-song.mp3"
+  piano: "./audio/piano.mp3",
+  drums: "./audio/drums.mp3",
+  rain: "./audio/rain.mp3",
+  song: "./audio/full-song.mp3"
 };
 let activeGrainPreset = "builtin";
 $("#audio-mode").addEventListener("change", async (event) => {

@@ -20,6 +20,7 @@ find dist -type f | while IFS= read -r file; do
     *.html) content_type="text/html" ;;
     *.js) content_type="text/javascript" ;;
     *.json) content_type="application/json" ;;
+    *.mp3) content_type="audio/mpeg" ;;
     *.png) content_type="image/png" ;;
     *.svg) content_type="image/svg+xml" ;;
     *.webp) content_type="image/webp" ;;
