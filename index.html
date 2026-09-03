@@ -46,10 +46,23 @@
           <div id="stats-list" class="stats-list"></div>
         </section>
 
-        <label class="super-speed-toggle">
-          <input id="super-speed" type="checkbox" />
-          <span>Super speed</span>
-        </label>
+        <div class="simulation-options">
+          <label class="webgl-toggle">
+            <input id="webgl" type="checkbox" checked />
+            <span>WebGL</span>
+          </label>
+          <label class="audio-mode-control">
+            <span>Audio</span>
+            <select id="audio-mode">
+              <option value="off">Off</option>
+              <option value="drones">Territory drones</option>
+              <option value="bells">Capture bells</option>
+              <option value="swarm">Ball swarm</option>
+              <option value="wind">Frontier wind</option>
+              <option value="pulse">Map pulse</option>
+            </select>
+          </label>
+        </div>
 
         <button id="pause" class="pause-button" type="button" aria-label="Pause simulation">
           <span class="pause-icon" aria-hidden="true"></span>

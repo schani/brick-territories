@@ -102,7 +102,7 @@ h1 {
 .status b { font-weight: 400; }
 .status i { width: 6px; height: 6px; border-radius: 50%; background: #2b9a63; }
 .status i.paused { background: var(--muted); }
-.status i.super { background: #dd7834; }
+.status i.webgl { background: #dd7834; }
 
 .world-frame {
   position: relative;
@@ -136,10 +136,7 @@ h1 {
 .cell-tooltip b { color: var(--muted); font-weight: 400; }
 .cell-tooltip output { font-variant-numeric: tabular-nums; }
 
-.pause-button, .super-speed-toggle {
-  position: absolute;
-  bottom: 12px;
-  z-index: 1;
+.pause-button, .webgl-toggle, .audio-mode-control {
   display: flex;
   align-items: center;
   height: 34px;
@@ -150,15 +147,19 @@ h1 {
   font-size: 12px;
 }
 
-.pause-button { right: 12px; gap: 8px; }
+.pause-button { position: absolute; right: 12px; bottom: 12px; z-index: 1; gap: 8px; }
 .pause-button:hover, .pause-button:focus-visible { background: var(--ink); color: var(--paper); }
 .pause-icon { width: 8px; height: 9px; border-right: 2px solid currentColor; border-left: 2px solid currentColor; }
 .pause-button.paused .pause-icon { width: 0; height: 0; border: 0; border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 8px solid currentColor; }
 
-.super-speed-toggle { left: 12px; gap: 7px; cursor: pointer; }
-.super-speed-toggle:has(input:focus-visible), .super-speed-toggle:has(input:checked) { background: var(--ink); color: var(--paper); }
-.super-speed-toggle input { width: 11px; height: 11px; margin: 0; accent-color: var(--ink); }
-.super-speed-toggle:has(input:checked) input { accent-color: var(--paper); }
+.simulation-options { position: absolute; z-index: 1; bottom: 12px; left: 12px; display: flex; gap: 8px; }
+.webgl-toggle { gap: 7px; cursor: pointer; }
+.webgl-toggle:has(input:focus-visible), .webgl-toggle:has(input:checked) { background: var(--ink); color: var(--paper); }
+.webgl-toggle input { width: 11px; height: 11px; margin: 0; accent-color: var(--ink); }
+.webgl-toggle:has(input:checked) input { accent-color: var(--paper); }
+.audio-mode-control { gap: 8px; padding-right: 7px; }
+.audio-mode-control select { width: 142px; border: 0; border-left: 1px solid var(--hairline); outline: 0; background: transparent; color: var(--ink); padding: 0 4px 0 8px; font: inherit; }
+.audio-mode-control:has(select:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 .stats-panel {
   position: absolute;
@@ -246,4 +247,6 @@ input[type="range"]::-moz-range-thumb { width: 8px; height: 8px; border: 1px sol
   .stats-panel { inset: 7px; padding: 10px; }
   .chart-wrap { min-height: 150px; }
   .stats-list { grid-template-columns: 1fr; }
+  .simulation-options { flex-direction: column; align-items: flex-start; }
+  .audio-mode-control select { width: 126px; }
 }

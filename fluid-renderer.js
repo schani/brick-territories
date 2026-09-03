@@ -16,13 +16,10 @@ uniform usampler2D uState;
 uniform ivec2 uGridSize;
 uniform vec3 uPalette[24];
 uniform int uHoveredOwner;
+uniform float uTime;
 
 in vec2 vUv;
 out vec4 outColor;
-
-float grain(vec2 point) {
-  return fract(sin(dot(point, vec2(12.9898, 78.233))) * 43758.5453);
-}
 
 float cubicWeight(float distance) {
   float value = abs(distance);
@@ -71,36 +68,44 @@ void main() {
   }
 
   int strongestOwner = 0;
-  int runnerUpOwner = 0;
   float strongest = -1.0;
   float runnerUp = -1.0;
   for (int owner = 0; owner < 24; owner++) {
     float value = influence[owner];
     if (value > strongest) {
       runnerUp = strongest;
-      runnerUpOwner = strongestOwner;
       strongest = value;
       strongestOwner = owner;
     } else if (value > runnerUp) {
       runnerUp = value;
-      runnerUpOwner = owner;
     }
   }
 
   float margin = strongest - runnerUp;
-  float blendWidth = max(fwidth(margin) * 2.5, 0.003);
-  float boundaryBlend = 1.0 - smoothstep(0.0, blendWidth, margin);
-  vec3 primary = uPalette[strongestOwner];
-  vec3 secondary = uPalette[runnerUpOwner];
-  vec3 blended = mix(primary, secondary, 0.5);
-  vec3 color = mix(primary, blended, boundaryBlend);
+  float pixelDistance = margin / max(fwidth(margin), 0.0001);
+  float core = 1.0 - smoothstep(0.0, 0.8, pixelDistance);
+  float capture = smoothstep(0.03, 0.35, activity);
+  float railWidth = 4.4 + capture * 4.0;
+  float rail = smoothstep(0.55, 1.15, pixelDistance) *
+               (1.0 - smoothstep(railWidth - 1.0, railWidth, pixelDistance));
+  float halo = smoothstep(1.0, 2.0, pixelDistance) *
+               (1.0 - smoothstep(railWidth + 4.0, railWidth + 8.0, pixelDistance));
+  float waveA = 0.5 + 0.5 * sin(gl_FragCoord.x * 0.065 + gl_FragCoord.y * 0.047 - uTime * 12.0);
+  float waveB = 0.5 + 0.5 * sin(gl_FragCoord.x * 0.035 - gl_FragCoord.y * 0.072 + uTime * 8.0);
+  float pulse = max(smoothstep(0.55, 0.94, waveA), smoothstep(0.82, 0.99, waveB));
+  float spark = pow(0.5 + 0.5 * sin(gl_FragCoord.x * 0.19 - gl_FragCoord.y * 0.13 + uTime * 22.0), 18.0);
+  float energy = rail * (0.28 + pulse * 0.58 + capture * 0.28 + spark * capture * 0.38);
+  vec3 base = uPalette[strongestOwner];
+  vec3 color = base * (1.0 - core * 0.22);
+  vec3 glow = min(base * 1.45 + 0.05, vec3(1.0));
+  color = mix(color, glow, halo * (0.12 + capture * 0.32));
+  vec3 frontier = mix(min(base * 1.7 + 0.06, vec3(1.0)), vec3(1.0), pulse * (0.25 + capture * 0.45));
+  color = mix(color, frontier, min(energy, 1.0));
 
   if (uHoveredOwner >= 0) {
     color *= strongestOwner == uHoveredOwner ? 1.06 : 0.92;
   }
 
-  color = mix(color, vec3(1.0), min(activity * 0.055, 0.055));
-  color += (grain(gl_FragCoord.xy) - 0.5) * 0.018;
   outColor = vec4(clamp(color, 0.0, 1.0), 1.0);
 }`;
 
@@ -155,7 +160,8 @@ export class FluidRenderer {
         state: gl.getUniformLocation(this.program, "uState"),
         gridSize: gl.getUniformLocation(this.program, "uGridSize"),
         palette: gl.getUniformLocation(this.program, "uPalette[0]"),
-        hoveredOwner: gl.getUniformLocation(this.program, "uHoveredOwner")
+        hoveredOwner: gl.getUniformLocation(this.program, "uHoveredOwner"),
+        time: gl.getUniformLocation(this.program, "uTime")
       };
 
       gl.useProgram(this.program);
@@ -233,6 +239,7 @@ export class FluidRenderer {
 
     gl.uniform2i(this.locations.gridSize, world.cols, world.rows);
     gl.uniform1i(this.locations.hoveredOwner, hoveredOwner);
+    gl.uniform1f(this.locations.time, now);
     gl.bindVertexArray(this.vertexArray);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }

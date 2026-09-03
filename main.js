@@ -1,4 +1,5 @@
 import { FluidRenderer } from "./fluid-renderer.js";
+import { TerritoryAudio } from "./audio-engine.js";
 
 const COLORS = [
   "#e05b43", "#2459a6", "#e6b82e", "#479967", "#8a64a7", "#dd7834",
@@ -75,6 +76,7 @@ class TerritoryWorld {
     this.cellHeight = 0;
     this.cells = new Uint8Array();
     this.balls = [];
+    this.captureEvents = [];
     this.hoveredCell = -1;
     this.settings = readSettings();
   }
@@ -98,6 +100,7 @@ class TerritoryWorld {
     const random = seededRandom(this.settings.seed);
     const points = spreadPoints(this.settings.territories, this.cols, this.rows, random);
     this.cells = new Uint8Array(this.cols * this.rows);
+    this.captureEvents = [];
 
     for (let row = 0; row < this.rows; row += 1) {
       for (let col = 0; col < this.cols; col += 1) {
@@ -188,6 +191,15 @@ class TerritoryWorld {
     if (hit.index >= 0 && hit.index !== ball.lastClaim && !this.ownerNear(hit.index, ball.owner)) {
       this.cells[hit.index] = ball.owner;
       ball.lastClaim = hit.index;
+      if (this.captureEvents.length < 64) {
+        const col = hit.index % this.cols;
+        const row = Math.floor(hit.index / this.cols);
+        this.captureEvents.push({
+          owner: ball.owner,
+          x: (col + 0.5) / this.cols,
+          y: (row + 0.5) / this.rows
+        });
+      }
     }
 
     const speed = Math.hypot(ball.vx, ball.vy);
@@ -207,12 +219,14 @@ class TerritoryWorld {
   }
 
   update(seconds) {
+    this.captureEvents = [];
     let remaining = seconds;
     while (remaining > 0) {
       const step = Math.min(1 / 120, remaining);
       for (const ball of this.balls) this.move(ball, step);
       remaining -= step;
     }
+    return this.captureEvents;
   }
 
   counts() {
@@ -390,6 +404,7 @@ class AreaHistory {
 const world = new TerritoryWorld();
 const history = new AreaHistory(world);
 const fluidRenderer = new FluidRenderer(fluidCanvas, COLORS);
+const audio = new TerritoryAudio();
 let paused = false;
 let elapsedSeconds = 0;
 let visualSeconds = 0;
@@ -399,7 +414,7 @@ let observedWidth = 0;
 let resizeTimer;
 let hoverPosition = null;
 let tooltipContent = "";
-let superSpeed = false;
+let webglEnabled = fluidRenderer.available;
 
 function formatElapsed(seconds) {
   const whole = Math.floor(seconds);
@@ -411,9 +426,10 @@ function setPaused(next) {
   $("#pause").classList.toggle("paused", paused);
   $("#pause-label").textContent = paused ? "resume" : "pause";
   $("#pause").setAttribute("aria-label", paused ? "Resume simulation" : "Pause simulation");
-  $("#status-text").textContent = paused ? "paused" : superSpeed ? "super speed" : "running";
+  $("#status-text").textContent = paused ? "paused" : webglEnabled ? "WebGL" : "running";
   $("#status-dot").classList.toggle("paused", paused);
-  $("#status-dot").classList.toggle("super", superSpeed && !paused);
+  $("#status-dot").classList.toggle("webgl", webglEnabled && !paused);
+  audio.setPaused(paused);
   previousTime = performance.now();
 }
 
@@ -421,6 +437,7 @@ function reset() {
   hideCellTooltip();
   world.reset();
   fluidRenderer.reset(world);
+  audio.reset(world);
   visualSeconds = 0;
   renderWorld();
   observedWidth = world.width;
@@ -432,9 +449,9 @@ function reset() {
 }
 
 function renderWorld(time = visualSeconds) {
-  canvas.hidden = superSpeed;
-  fluidCanvas.hidden = !superSpeed;
-  if (!superSpeed) {
+  canvas.hidden = webglEnabled;
+  fluidCanvas.hidden = !webglEnabled;
+  if (!webglEnabled) {
     world.draw();
     return;
   }
@@ -475,14 +492,22 @@ function updateCellTooltip() {
 }
 
 function tick(now) {
+  requestAnimationFrame(tick);
   const delta = (now - previousTime) / 1000;
   previousTime = now;
   if (!paused) {
     const frameDelta = Math.min(delta, 0.05);
-    const simulationDelta = frameDelta * (superSpeed ? 12 : 1);
+    const simulationDelta = frameDelta * (webglEnabled ? 12 : 1);
     elapsedSeconds += simulationDelta;
     visualSeconds += frameDelta;
-    world.update(simulationDelta);
+    const captures = world.update(simulationDelta);
+    try {
+      audio.update(world, captures);
+    } catch (error) {
+      console.warn("Audio synthesis stopped", error);
+      $("#audio-mode").value = "off";
+      audio.stop();
+    }
     renderWorld();
     updateCellTooltip();
     if (elapsedSeconds >= nextSample) {
@@ -491,7 +516,6 @@ function tick(now) {
     }
     $("#elapsed").textContent = formatElapsed(elapsedSeconds);
   }
-  requestAnimationFrame(tick);
 }
 
 function updateOutputs() {
@@ -519,11 +543,20 @@ controls.addEventListener("submit", (event) => {
 });
 
 $("#pause").addEventListener("click", () => setPaused(!paused));
-$("#super-speed").addEventListener("change", (event) => {
-  superSpeed = event.target.checked;
-  if (superSpeed) fluidRenderer.reset(world);
+$("#webgl").addEventListener("change", (event) => {
+  webglEnabled = event.target.checked;
+  if (webglEnabled) fluidRenderer.reset(world);
   setPaused(paused);
   renderWorld();
+});
+$("#audio-mode").addEventListener("change", async (event) => {
+  try {
+    await audio.setMode(event.target.value, world);
+  } catch (error) {
+    console.warn("Audio synthesis unavailable", error);
+    event.target.value = "off";
+    audio.stop();
+  }
 });
 function moveOverWorld(event) {
   const bounds = event.currentTarget.getBoundingClientRect();
@@ -564,7 +597,7 @@ document.addEventListener("pointerdown", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !$("#inspiration-link").hidden) $("#inspiration-toggle").click();
   else if (event.key === "Escape" && !$("#stats-panel").hidden) $("#stats-toggle").click();
-  else if (event.code === "Space" && !event.target.matches("button, input")) {
+  else if (event.code === "Space" && !event.target.matches("button, input, select")) {
     event.preventDefault();
     setPaused(!paused);
   }
@@ -585,8 +618,13 @@ const seedBytes = new Uint32Array(1);
 crypto.getRandomValues(seedBytes);
 controls.seed.value = String(seedBytes[0] % 999 + 1);
 if (!fluidRenderer.available) {
-  $("#super-speed").disabled = true;
-  $(".super-speed-toggle").title = "WebGL2 is unavailable in this browser";
+  $("#webgl").checked = false;
+  $("#webgl").disabled = true;
+  $(".webgl-toggle").title = "WebGL2 is unavailable in this browser";
+}
+if (!audio.supported) {
+  $("#audio-mode").disabled = true;
+  $(".audio-mode-control").title = "Web Audio is unavailable in this browser";
 }
 updateOutputs();
 reset();
