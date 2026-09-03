@@ -136,7 +136,7 @@ h1 {
 .cell-tooltip b { color: var(--muted); font-weight: 400; }
 .cell-tooltip output { font-variant-numeric: tabular-nums; }
 
-.pause-button, .webgl-toggle, .audio-mode-control {
+.pause-button, .webgl-toggle, .audio-mode-control, .grain-source-control {
   display: flex;
   align-items: center;
   height: 34px;
@@ -160,6 +160,10 @@ h1 {
 .audio-mode-control { gap: 8px; padding-right: 7px; }
 .audio-mode-control select { width: 142px; border: 0; border-left: 1px solid var(--hairline); outline: 0; background: transparent; color: var(--ink); padding: 0 4px 0 8px; font: inherit; }
 .audio-mode-control:has(select:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
+.grain-source-control { gap: 8px; max-width: 190px; }
+.grain-source-control[hidden] { display: none; }
+.grain-source-control select { width: 116px; border: 0; border-left: 1px solid var(--hairline); outline: 0; background: transparent; color: var(--ink); padding: 0 4px 0 8px; font: inherit; }
+.grain-source-control:has(select:focus-visible) { outline: 2px solid var(--ink); outline-offset: 2px; }
 
 .stats-panel {
   position: absolute;
