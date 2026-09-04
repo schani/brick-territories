@@ -504,9 +504,7 @@ function tick(now) {
     try {
       audio.update(world, captures);
     } catch (error) {
-      console.warn("Audio synthesis stopped", error);
-      $("#audio-mode").value = "off";
-      $(".grain-source-control").hidden = true;
+      console.warn("Audio rendering stopped", error);
       audio.stop();
     }
     renderWorld();
@@ -549,59 +547,6 @@ $("#webgl").addEventListener("change", (event) => {
   if (webglEnabled) fluidRenderer.reset(world);
   setPaused(paused);
   renderWorld();
-});
-const grainSourceControl = $(".grain-source-control");
-const grainPresets = {
-  piano: "./audio/piano.mp3",
-  drums: "./audio/drums.mp3",
-  rain: "./audio/rain.mp3",
-  song: "./audio/full-song.mp3"
-};
-let activeGrainPreset = "builtin";
-$("#audio-mode").addEventListener("change", async (event) => {
-  grainSourceControl.hidden = !event.target.value.startsWith("grain-");
-  try {
-    await audio.setMode(event.target.value, world);
-  } catch (error) {
-    console.warn("Audio synthesis unavailable", error);
-    event.target.value = "off";
-    grainSourceControl.hidden = true;
-    audio.stop();
-  }
-});
-$("#grain-preset").addEventListener("change", async (event) => {
-  const preset = event.target.value;
-  if (preset === "upload") {
-    $("#grain-source").value = "";
-    $("#grain-source").click();
-    return;
-  }
-  try {
-    if (await audio.loadGrainPreset(preset, grainPresets[preset], world)) activeGrainPreset = preset;
-  } catch (error) {
-    console.warn("Audio source unavailable", error);
-    event.target.value = activeGrainPreset;
-  }
-});
-$("#grain-source").addEventListener("change", async (event) => {
-  const [file] = event.target.files;
-  const preset = $("#grain-preset");
-  if (!file) return;
-  const uploadOption = preset.querySelector('[value="upload"]');
-  uploadOption.textContent = "Loading…";
-  try {
-    if (await audio.loadGrainSource(await file.arrayBuffer(), world) === null) return;
-    uploadOption.textContent = file.name;
-    preset.value = "upload";
-    activeGrainPreset = "upload";
-  } catch (error) {
-    console.warn("Audio file could not be decoded", error);
-    uploadOption.textContent = "Upload file…";
-    preset.value = activeGrainPreset;
-  }
-});
-$("#grain-source").addEventListener("cancel", () => {
-  $("#grain-preset").value = activeGrainPreset;
 });
 function moveOverWorld(event) {
   const bounds = event.currentTarget.getBoundingClientRect();
@@ -666,12 +611,6 @@ if (!fluidRenderer.available) {
   $("#webgl").checked = false;
   $("#webgl").disabled = true;
   $(".webgl-toggle").title = "WebGL2 is unavailable in this browser";
-}
-if (!audio.supported) {
-  $("#audio-mode").disabled = true;
-  $("#grain-preset").disabled = true;
-  $("#grain-source").disabled = true;
-  $(".audio-mode-control").title = "Web Audio is unavailable in this browser";
 }
 updateOutputs();
 reset();
